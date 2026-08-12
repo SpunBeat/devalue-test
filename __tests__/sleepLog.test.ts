@@ -3,10 +3,13 @@
  */
 
 import {
-  formatClockTime,
+  buildLog,
   formatElapsed,
+  formatTimeOfDay,
   getAverageElapsedMs,
   getElapsedMs,
+  getMaxElapsedMs,
+  parseTimeOfDay,
   withStats,
 } from '../src/lib/sleepLog';
 import type { Log } from '../src/types/log';
@@ -52,6 +55,21 @@ describe('getAverageElapsedMs', () => {
     ];
 
     expect(getAverageElapsedMs(logs)).toBe(7 * HOUR);
+  });
+});
+
+describe('getMaxElapsedMs', () => {
+  test('is zero for an empty list', () => {
+    expect(getMaxElapsedMs([])).toBe(0);
+  });
+
+  test('returns the longest night', () => {
+    const logs = [
+      makeLog('1', '2026-08-11T00:00:00.000Z', '2026-08-11T06:00:00.000Z'),
+      makeLog('2', '2026-08-12T00:00:00.000Z', '2026-08-12T08:00:00.000Z'),
+    ];
+
+    expect(getMaxElapsedMs(logs)).toBe(8 * HOUR);
   });
 });
 
@@ -108,14 +126,100 @@ describe('formatElapsed', () => {
   });
 });
 
-describe('formatClockTime', () => {
-  test('falls back on an unparseable instant', () => {
-    expect(formatClockTime('not a date')).toBe('--:--');
+describe('formatTimeOfDay', () => {
+  test('renders 12-hour time with a meridiem', () => {
+    expect(formatTimeOfDay(new Date(2026, 7, 10, 21, 10).toISOString())).toBe(
+      '9:10 pm',
+    );
+    expect(formatTimeOfDay(new Date(2026, 7, 11, 4, 55).toISOString())).toBe(
+      '4:55 am',
+    );
   });
 
-  test('pads to HH:mm', () => {
-    expect(formatClockTime(new Date(2026, 7, 11, 7, 5).toISOString())).toBe(
-      '07:05',
+  test('renders both noon and midnight as 12', () => {
+    expect(formatTimeOfDay(new Date(2026, 7, 11, 0, 5).toISOString())).toBe(
+      '12:05 am',
     );
+    expect(formatTimeOfDay(new Date(2026, 7, 11, 12, 0).toISOString())).toBe(
+      '12:00 pm',
+    );
+  });
+
+  test('falls back on an unparseable instant', () => {
+    expect(formatTimeOfDay('not a date')).toBe('--:--');
+  });
+});
+
+describe('parseTimeOfDay', () => {
+  test('reads the shapes a parent might type', () => {
+    expect(parseTimeOfDay('9:10 pm')).toEqual({ hours: 21, minutes: 10 });
+    expect(parseTimeOfDay('9:10pm')).toEqual({ hours: 21, minutes: 10 });
+    expect(parseTimeOfDay('21:10')).toEqual({ hours: 21, minutes: 10 });
+    expect(parseTimeOfDay(' 9 PM ')).toEqual({ hours: 21, minutes: 0 });
+    expect(parseTimeOfDay('12:30 am')).toEqual({ hours: 0, minutes: 30 });
+  });
+
+  test('rejects out-of-range and malformed input', () => {
+    expect(parseTimeOfDay('25:00')).toBeNull();
+    expect(parseTimeOfDay('9:75')).toBeNull();
+    expect(parseTimeOfDay('13:00 pm')).toBeNull();
+    expect(parseTimeOfDay('bedtime')).toBeNull();
+    expect(parseTimeOfDay('')).toBeNull();
+  });
+});
+
+describe('buildLog', () => {
+  test('puts an evening bedtime on the night before the wake date', () => {
+    const log = buildLog({
+      id: '1',
+      date: '2026-08-11',
+      sleepTime: '9:10 pm',
+      wakeTime: '4:55 am',
+    });
+
+    expect(log).not.toBeNull();
+    expect(new Date(log!.sleepTime)).toEqual(new Date(2026, 7, 10, 21, 10));
+    expect(new Date(log!.wakeTime)).toEqual(new Date(2026, 7, 11, 4, 55));
+    expect(getElapsedMs(log!)).toBe(7 * HOUR + 45 * 60 * 1000);
+  });
+
+  test('keeps a daytime nap on the same day', () => {
+    const log = buildLog({
+      id: '1',
+      date: '2026-08-11',
+      sleepTime: '1:00 pm',
+      wakeTime: '3:00 pm',
+    });
+
+    expect(new Date(log!.sleepTime)).toEqual(new Date(2026, 7, 11, 13, 0));
+    expect(getElapsedMs(log!)).toBe(2 * HOUR);
+  });
+
+  test('trims notes and omits them when blank', () => {
+    const withNote = buildLog({
+      id: '1',
+      date: '2026-08-11',
+      sleepTime: '9:10 pm',
+      wakeTime: '4:55 am',
+      notes: '  Room too warm  ',
+    });
+    const withoutNote = buildLog({
+      id: '2',
+      date: '2026-08-11',
+      sleepTime: '9:10 pm',
+      wakeTime: '4:55 am',
+      notes: '   ',
+    });
+
+    expect(withNote!.notes).toBe('Room too warm');
+    expect(withoutNote).not.toHaveProperty('notes');
+  });
+
+  test('returns null when a field does not parse', () => {
+    const base = { id: '1', date: '2026-08-11', sleepTime: '9:10 pm' };
+
+    expect(buildLog({ ...base, wakeTime: 'morning' })).toBeNull();
+    expect(buildLog({ ...base, date: '11/08/2026', wakeTime: '7:00 am' })).toBeNull();
+    expect(buildLog({ ...base, date: '2026-13-01', wakeTime: '7:00 am' })).toBeNull();
   });
 });

@@ -2,136 +2,120 @@
  * @format
  */
 
-import { Moon, ScrollText, Sun } from 'lucide-react-native';
-import { useMemo } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import AddEntrySheet from '../components/AddEntrySheet';
+import type { AddEntryValues } from '../components/AddEntrySheet';
+import AppHeader from '../components/AppHeader';
+import EmptyState from '../components/EmptyState';
+import EntryCard from '../components/EntryCard';
+import FAB from '../components/FAB';
+import MonoLabel from '../components/MonoLabel';
+import Pill from '../components/Pill';
 import {
-  formatClockTime,
   formatDate,
   formatElapsed,
-  withStats,
+  formatTimeOfDay,
+  todayIsoDate,
 } from '../lib/sleepLog';
-import type { Log, LogWithStats } from '../types/log';
-
-const logs: Log[] = [];
-
-function LogRow({ log }: { log: LogWithStats }) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.rowHeader}>
-        <Text style={styles.date}>{formatDate(log.date)}</Text>
-        <Text style={styles.progress}>{log.progressPercentage}%</Text>
-      </View>
-
-      <View style={styles.times}>
-        <Moon color="#6b7280" size={14} />
-        <Text style={styles.time}>{formatClockTime(log.sleepTime)}</Text>
-        <Sun color="#6b7280" size={14} />
-        <Text style={styles.time}>{formatClockTime(log.wakeTime)}</Text>
-        <Text style={styles.elapsed}>{formatElapsed(log.elapsedMs)}</Text>
-      </View>
-
-      {log.notes ? <Text style={styles.notes}>{log.notes}</Text> : null}
-    </View>
-  );
-}
-
-function Separator() {
-  return <View style={styles.separator} />;
-}
-
-function EmptyList() {
-  return (
-    <View style={styles.empty}>
-      <ScrollText color="#6b7280" size={40} />
-      <Text style={styles.emptyTitle}>No logs yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Logs will show up here once there are any to display.
-      </Text>
-    </View>
-  );
-}
+import { useLogStore, useLogSummary } from '../store/useLogStore';
+import { colors, spacing } from '../theme';
 
 function LogListScreen() {
-  // Progress is relative to the list average, so it is recomputed whenever the
-  // list changes rather than stored on each log.
-  const data = useMemo(() => withStats(logs), []);
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const { entries, maxElapsedMs } = useLogSummary();
+  const addEntry = useLogStore(state => state.addEntry);
+
+  const submit = (values: AddEntryValues) =>
+    addEntry({
+      date: values.date,
+      sleepTime: values.sleepTime,
+      wakeTime: values.wakeTime,
+      notes: values.notes,
+    });
 
   return (
-    <FlatList
-      data={data}
-      keyExtractor={log => log.id}
-      renderItem={({ item }) => <LogRow log={item} />}
-      ItemSeparatorComponent={Separator}
-      ListEmptyComponent={EmptyList}
-      contentContainerStyle={styles.content}
-    />
+    <SafeAreaView edges={['top']} style={styles.screen}>
+      <AppHeader badge="Mia · 4mo" />
+
+      <FlatList
+        contentContainerStyle={[
+          styles.content,
+          entries.length === 0 && styles.contentEmpty,
+        ]}
+        data={entries}
+        keyExtractor={entry => entry.id}
+        ListEmptyComponent={
+          <EmptyState
+            hint="Tap + to log your first sleep"
+            title="No entries yet"
+          />
+        }
+        ListHeaderComponent={
+          entries.length === 0 ? undefined : (
+            <View style={styles.listHeader}>
+              <MonoLabel>This week</MonoLabel>
+              <Pill
+                label={`${entries.length} ${
+                  entries.length === 1 ? 'entry' : 'entries'
+                }`}
+                uppercase
+                variant="mint"
+              />
+            </View>
+          )
+        }
+        renderItem={({ item, index }) => (
+          <EntryCard
+            date={formatDate(item.date)}
+            duration={formatElapsed(item.elapsedMs)}
+            endTime={formatTimeOfDay(item.wakeTime)}
+            highlighted={index === 0}
+            note={item.notes}
+            percentOfAverage={item.progressPercentage}
+            progress={maxElapsedMs === 0 ? 0 : item.elapsedMs / maxElapsedMs}
+            startTime={formatTimeOfDay(item.sleepTime)}
+          />
+        )}
+      />
+
+      <FAB
+        accessibilityLabel="Add sleep entry"
+        onPress={() => setSheetVisible(true)}
+      />
+
+      <AddEntrySheet
+        defaultDate={todayIsoDate()}
+        onClose={() => setSheetVisible(false)}
+        onSubmit={submit}
+        visible={sheetVisible}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    backgroundColor: colors.background,
+    flex: 1,
+  },
   content: {
     flexGrow: 1,
+    gap: spacing.md,
+    paddingBottom: 96,
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.lg,
   },
-  row: {
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  date: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  progress: {
-    color: '#1f6feb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  times: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  time: {
-    color: '#374151',
-    fontSize: 14,
-    marginRight: 6,
-  },
-  elapsed: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 'auto',
-  },
-  notes: {
-    color: '#6b7280',
-    fontSize: 13,
-  },
-  separator: {
-    backgroundColor: '#e5e7eb',
-    height: StyleSheet.hairlineWidth,
-  },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
+  contentEmpty: {
     justifyContent: 'center',
-    gap: 8,
-    padding: 24,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  emptySubtitle: {
-    color: '#6b7280',
-    fontSize: 14,
-    textAlign: 'center',
+  listHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: spacing.xs,
   },
 });
 

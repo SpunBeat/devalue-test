@@ -4,6 +4,7 @@
  * @format
  */
 
+import { X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
@@ -50,7 +51,20 @@ function BottomSheet({ visible, onClose, title, children }: BottomSheetProps) {
               { paddingBottom: insets.bottom + spacing.xl },
             ]}>
             <View style={styles.handle} />
-            <Text style={styles.title}>{title}</Text>
+            <View style={styles.header}>
+              <Text style={styles.title}>{title}</Text>
+              <Pressable
+                accessibilityLabel="Close"
+                accessibilityRole="button"
+                hitSlop={12}
+                onPress={onClose}
+                style={({ pressed }) => [
+                  styles.close,
+                  pressed && styles.closePressed,
+                ]}>
+                <X color={colors.textMuted} size={18} />
+              </Pressable>
+            </View>
             {children}
           </View>
         </KeyboardAvoidingView>
@@ -89,9 +103,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     width: 40,
   },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
   title: {
     ...typography.sheetTitle,
     color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  close: {
+    alignItems: 'center',
+    backgroundColor: colors.inputFill,
+    borderRadius: radii.pill,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  closePressed: {
+    opacity: 0.7,
   },
 });
 

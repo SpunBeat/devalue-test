@@ -3,18 +3,22 @@
  */
 
 import { ChartLine } from 'lucide-react-native';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '../components/AppHeader';
 import EmptyState from '../components/EmptyState';
 import EntryCard from '../components/EntryCard';
 import MonoLabel from '../components/MonoLabel';
+import SleepSummarySheet from '../components/SleepSummarySheet';
 import StatTile from '../components/StatTile';
 import SummaryCard from '../components/SummaryCard';
+import { useSleepSummary } from '../hooks/useSleepSummary';
 import { formatDate, formatElapsed, formatTimeOfDay } from '../lib/sleepLog';
+import { buildSummaryRequest } from '../lib/summaryRequest';
 import { useLogSummary } from '../store/useLogStore';
-import { colors, spacing } from '../theme';
+import { colors, spacing, typography } from '../theme';
 import type { LogWithStats } from '../types/log';
 
 const emptySummary =
@@ -43,6 +47,27 @@ function buildSummary(
 
 function AnalysisScreen() {
   const { entries, averageElapsedMs, maxElapsedMs } = useLogSummary();
+  const [selected, setSelected] = useState<LogWithStats | null>(null);
+  const { state, run, reset } = useSleepSummary();
+
+  const openSummary = useCallback(
+    (entry: LogWithStats) => {
+      setSelected(entry);
+      run(buildSummaryRequest(entry));
+    },
+    [run],
+  );
+
+  const closeSummary = useCallback(() => {
+    setSelected(null);
+    reset();
+  }, [reset]);
+
+  const retry = useCallback(() => {
+    if (selected) {
+      run(buildSummaryRequest(selected));
+    }
+  }, [run, selected]);
 
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
@@ -69,7 +94,9 @@ function AnalysisScreen() {
               <StatTile label="Entries" value={`${entries.length}`} />
               <StatTile
                 label="Average"
-                value={entries.length === 0 ? '—' : formatElapsed(averageElapsedMs)}
+                value={
+                  entries.length === 0 ? '—' : formatElapsed(averageElapsedMs)
+                }
               />
               <StatTile
                 label="Longest"
@@ -83,7 +110,10 @@ function AnalysisScreen() {
             />
 
             {entries.length === 0 ? null : (
-              <MonoLabel style={styles.listLabel}>All entries</MonoLabel>
+              <View style={styles.listHeader}>
+                <MonoLabel>All entries</MonoLabel>
+                <Text style={styles.hint}>Tap a night for a summary</Text>
+              </View>
             )}
           </View>
         }
@@ -92,12 +122,29 @@ function AnalysisScreen() {
             date={formatDate(item.date)}
             duration={formatElapsed(item.elapsedMs)}
             endTime={formatTimeOfDay(item.wakeTime)}
+            highlighted={item.id === selected?.id}
             note={item.notes}
+            onPress={() => openSummary(item)}
             percentOfAverage={item.progressPercentage}
             progress={maxElapsedMs === 0 ? 0 : item.elapsedMs / maxElapsedMs}
             startTime={formatTimeOfDay(item.sleepTime)}
           />
         )}
+      />
+
+      <SleepSummarySheet
+        date={selected ? formatDate(selected.date) : ''}
+        detail={
+          selected
+            ? `${formatTimeOfDay(selected.sleepTime)} → ${formatTimeOfDay(
+                selected.wakeTime,
+              )} · ${formatElapsed(selected.elapsedMs)}`
+            : ''
+        }
+        onClose={closeSummary}
+        onRetry={retry}
+        state={state}
+        visible={selected !== null}
       />
     </SafeAreaView>
   );
@@ -122,8 +169,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  listLabel: {
+  listHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
     paddingTop: spacing.sm,
+  },
+  hint: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
   },
   empty: {
     flex: 1,
